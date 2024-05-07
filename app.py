@@ -1,3 +1,5 @@
+from pathlib import Path
+import pickle
 import zipfile
 import openai
 import time
@@ -10,8 +12,36 @@ from langchain.vectorstores.chroma import Chroma
 from langchain.prompts import ChatPromptTemplate
 from langchain.chat_models import ChatOpenAI
 from datetime import datetime
+from streamlit_pills import pills
 
+from st_paywall import add_auth
 
+add_auth(required=True, login_sidebar=False)
+
+# st.write("You're all set and subscribed and ready to go! 🎉")
+# import streamlit_authenticator as stauth
+# # --- USER AUTHENTICATION ---
+# names = ["Peter Parker", "Rebecca Miller"]
+# usernames = ["pparker", "rmiller"]
+
+# # load hashed passwords
+# file_path = Path(__file__).parent / "hashed_pw.pkl"
+# with file_path.open("rb") as file:
+#     hashed_passwords = pickle.load(file)
+
+# authenticator = stauth.Authenticate(names, usernames, hashed_passwords,
+#     "sales_dashboard", "abcdef", cookie_expiry_days=30)
+
+# name, authentication_status, username = authenticator.login("Login", "main")
+
+# if authentication_status == False:
+#     st.error("Username/password is incorrect")
+
+# if authentication_status == None:
+#     st.warning("Please enter your username and password")
+
+# if authentication_status:
+    
 # __import__('pysqlite3')
 # import sys
 # sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
@@ -42,7 +72,7 @@ def estimate_complexity(question):
         return 5   # Moderate complexity
     else:
         return 2   # Low complexity
-  
+
     
 def init_data_analysis():
     if "messages_data_analysis" not in st.session_state:
@@ -76,6 +106,7 @@ def run_research_assistant_chatbot():
     st.markdown('Enjoy fully cited responses, Harvard style.')
     st.divider()
 
+    
     PROMPT_TEMPLATE = """
     Answer the question based only on the following context:
 
@@ -136,7 +167,16 @@ def run_research_assistant_chatbot():
             )
         )
         
+    options = [
+    "Design me an experiment on this",
+    "What is an outstanding area of research on this topic?",
+    "Explain a previous experiment that has been done on this",
+    "Explain this concept as you would to a kid",
+    "Turn this into a scientific report"
+    ]
 
+
+    
     def formulate_response(prompt):
         
 
@@ -180,47 +220,60 @@ def run_research_assistant_chatbot():
                 high_scoring_results = [result for result in follow_up_results.matches if result.score >= very_strong_correlation_threshold]
 
                 if results.matches:
-                    sources = []
+                    sources = {} 
                     combined_texts = []
-                    for i, (doc, _score) in enumerate(high_scoring_results):
-                        doc_content = doc.page_content
-                        first_author = doc.metadata['authors'].split(',')[0] if 'authors' in doc.metadata and doc.metadata['authors'] else "Unknown"
-                        citation_key = f"({first_author} et al., {doc.metadata.get('year', 'Unknown')})"
-                        combined_texts.append(f"{doc_content} {citation_key}")
-                        source_info = (
-                            f"\n🦠 {doc.metadata.get('authors', 'Unknown')}\n"
-                            f"({doc.metadata.get('year', 'Unknown')}),\n"
-                            f"\"{doc.metadata['title']}\",\n"
-                            f"PMID: {doc.metadata.get('pub_id', 'N/A')},\n"
-                            f"Available at: {doc.metadata.get('url', 'N/A')},\n"
-                            f"Accessed on: {datetime.today().strftime('%Y-%m-%d')}\n"
-                        )
-                        sources.append(source_info)
+                    if results.matches:
+                        response_text = ""
+                        for match in results.matches:
+                            metadata = match.metadata
+                            authors = metadata.get('authors', 'Unknown')
+                            year = metadata.get('year', 'Unknown')
+                            citation_key = f"({authors.split(',')[0]} et al., {year})"
+                            
+                            # Prepare response text and record the source info
+                            response_text += f"Based on the findings in {citation_key}, [further text]...\n"
+                            sources[citation_key] = (
+                                f"\n🦠 {metadata.get('authors', 'Unknown')}\n"
+                                f"({metadata.get('year', 'Unknown')}),\n"
+                                f"\"{metadata['title']}\",\n"
+                                f"PMID: {metadata.get('pub_id', 'N/A')},\n"
+                                f"Available at: {metadata.get('url', 'N/A')},\n"
+                                f"Accessed on: {datetime.today().strftime('%Y-%m-%d')}\n"
+                            )
+
+                        # Format sources only cited in the response
+                        citations = "\n".join([sources[key] for key in sources if key in response_text])
+                        # sources.append(source_info)
                     combined_input = " ".join(combined_texts)
                     # query_for_llm = f"{combined_input} Answer the question with citation to the paragraphs. For every sentence you write, cite the book name and paragraph number as (author, year). At the end of your commentary, suggest a further question that can be answered by the paragraphs provided."
                     query_for_llm = (
-                        "Answer the question directly."
                         f"Question: {prompt}\n\n"
-                        f"Answer the question with citations to each sentence:{combined_input}\n\n"
-                        f"Question: {prompt}\n\n"
-                        "Please answer the question directly with a lot of extra detail, show step by step, step 1 2 3 etc.. with nice and pretty formatting and bold headings, citing relevant sections (author, year) for support."
-                        f"If the question ({prompt}) has asked you to design an experiment then suggest a further question/experiment that relates, and cite it if possible, if the question didn't ask you to, then don't"
+                        f"Please answer the question directly with a lot of extra technical detail, with pretty formatting and bold headings, citing relevant sentences with (author, year). The (author, year) should be a hyperlink to the {metadata.get('url', 'N/A')} pubmed url. citings: {sources[citation_key]}"
                     )
                     integrated_response = model.predict(query_for_llm)
-                    sources_formatted = "\n".join(sources) 
-                    citations = sources_formatted
+                    # sources_formatted = "\n".join(sources) 
+                    # citations = sources_formatted
                     
                     response = f"{integrated_response}\n"
             else:
                 context_texts = []
                 sources = []
-                for doc, _score in results:
+                for match in results.matches:
+                    doc_id = match.id
+                    metadata = match.metadata
+                    authors = metadata.get('authors', 'Unknown')
+                    year = metadata.get('year', 'Unknown')
+                    title = metadata.get('title', 'Unknown')
+                    pub_id = metadata.get('pub_id', 'N/A')
+                    url = metadata.get('url', 'N/A')
+
+                    citation_key = f"({authors.split(',')[0]} et al., {year})"
                     source_info = (
-                        f"\n🦠 {doc.metadata.get('authors', 'Unknown')}\n"
-                        f"({doc.metadata.get('year', 'Unknown')}),\n"
-                        f"\"{doc.metadata['title']}\",\n"
-                        f"PMID: {doc.metadata.get('pub_id', 'N/A')},\n"
-                        f"Available at: {doc.metadata.get('url', 'N/A')},\n"
+                        f"\n🦠 {authors}\n"
+                        f"({year}),\n"
+                        f"\"{title}\",\n"
+                        f"PMID: {pub_id},\n"
+                        f"Available at: {url},\n"
                         f"Accessed on: {datetime.today().strftime('%Y-%m-%d')}\n"
                     )
                     sources.append(source_info)
@@ -277,8 +330,15 @@ def run_research_assistant_chatbot():
                     st.markdown(message["citations"], unsafe_allow_html=True)
 
 
+    selected_prompt = pills("Prompts", options)
+    if selected_prompt:
+        st.session_state.messages.append({"role": "user", "content": selected_prompt})
+        formulate_response(selected_prompt)
+
+
     user_prompt = st.chat_input("How can I help?")
 
+        
     if user_prompt:
         st.session_state.messages.append({"role": "user", "content": user_prompt})
         formulate_response(user_prompt)
@@ -425,7 +485,7 @@ def run_data_analysis_chatbot():
                 return assistants_dict[assistant_name]
         else:
             st.warning("Assistant name does exist in assistants_dict. Please choose another name.")
-      
+    
     def chat_prompt(client, assistant_option):
         if prompt := st.chat_input("Enter your message here"):
             # Append the user's message to the chat history for later display
@@ -554,18 +614,19 @@ def run_data_analysis_chatbot():
         print(st.session_state.file_ids)
 
 def main():
-    st.sidebar.title("LabXpert 🧬")
-    st.sidebar.image("pic.png")
+    st.sidebar.title("LabXpert ")
+    # st.sidebar.image("pic.png")
     st.sidebar.caption("Copyright © 2024 LabXpert, Inc. All rights reserved.")
     st.sidebar.divider()
     # Set 'Research Xpert 🔬' as the default selected option
-    chatbot_mode = st.sidebar.radio("Select an AI Xpert", ('Research Xpert 📄', 'Data Xpert 📊'), index=0)
-    if chatbot_mode == 'Research Xpert 📄':
+    chatbot_mode = st.sidebar.radio("Select an AI Xpert", ('Research Xpert ', 'Data Xpert '), index=0)
+    if chatbot_mode == 'Research Xpert ':
         init_research_assistant()
         run_research_assistant_chatbot()
-    elif chatbot_mode == 'Data Xpert 📊':
+    elif chatbot_mode == 'Data Xpert ':
         init_data_analysis()
         run_data_analysis_chatbot()
 
 if __name__ == '__main__':
     main()
+
