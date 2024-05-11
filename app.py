@@ -12,12 +12,70 @@ from langchain.vectorstores.chroma import Chroma
 from langchain.prompts import ChatPromptTemplate
 from langchain.chat_models import ChatOpenAI
 from datetime import datetime
-from streamlit_pills import pills
+import streamlit as st
+# from decouple import config
+from PIL import Image
+
+
+
+
+# st.markdown('## LabXpert')
+# col1, col2 = st.columns((2,1))
+# with col1:
+#     st.markdown(
+#         f"""
+#         #### [Sign Up Now 🤘🏻]('https://buy.stripe.com/test_bIY7vu4Ob2WF9UseUU')
+#         """
+#     )
+# # with col2:
+# #     image = Image.open('./assets/DALL·E 2023-01-08 17.53.04 - futuristic knight robot on a horse in cyberpunk theme.png')
+# #     st.image(image)
+
+
+# st.markdown('### Already have an Account? Login Below👇🏻')
+# with st.form("login_form"):
+#     st.write("Login")
+#     email = st.text_input('Enter Your Email')
+#     password = st.text_input('Enter Your Password')
+#     submitted = st.form_submit_button("Login")
+
+
+# if submitted:
+#     if password == config('SECRET_PASSWORD'):
+#         st.session_state['logged_in'] = True
+#         st.text('Succesfully Logged In!')
+#     else:
+#         st.text('Incorrect, login credentials.')
+#         st.session_state['logged_in'] = False
+
+
+# if 'logged_in' in st.session_state.keys():
+#     if st.session_state['logged_in']:
+#         st.markdown('## Ask Me Anything')
+#         question = st.text_input('Ask your question')
+#         if question != '':
+#             st.write('I drink and I know things.')
+
+# https://buy.stripe.com/test_bIY7vu4Ob2WF9UseUU
 
 from st_paywall import add_auth
+st.set_page_config(page_icon='🧬', page_title='Streamlit Paywall Example', layout="centered")
 
-add_auth(required=True, login_sidebar=False)
-
+with st.sidebar:
+    st.sidebar.title("LabXpert ")
+    st.sidebar.caption("Copyright © 2024 LabXpert, Inc. All rights reserved.")
+    
+    # Adding text and formatting to the sidebar
+    st.markdown(
+        """
+        Enhancing the scientific research process with AI:
+        - Trained on a wealth of scientific literature.
+        - Reduces hours of literature searching.
+        - Data analysis to just a few seconds.
+        """
+    )
+add_auth(required=True, login_sidebar=False, login_button_color="#364390")
+st.sidebar.write(f'Welcome {st.session_state.email}!')
 # st.write("You're all set and subscribed and ready to go! 🎉")
 # import streamlit_authenticator as stauth
 # # --- USER AUTHENTICATION ---
@@ -46,8 +104,20 @@ add_auth(required=True, login_sidebar=False)
 # import sys
 # sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 
+def estimate_relevance(question):
+    # List of simpler word
+    
+    unrelated_words = ['hi', 'hello', 'how are you', 'good morning', 'good evening']
+
+    # Check if the entire question matches any of the unrelated phrases
+    if any(question.strip().lower() == word for word in unrelated_words):
+        return 0  # Return a score of 0 for unrelated words or simple greetings
+
+
 def estimate_complexity(question):
-    # List of simpler words
+    # List of simpler word
+    
+    
     simple_words = [ 'name', 'show', 'list', 'tell', 'define', 'what', 'who', 'where']
 
     # List of difficult words
@@ -67,11 +137,11 @@ def estimate_complexity(question):
 
     # Decide the complexity level based on the complexity score
     if complexity_score > 3:
-        return 10  # High complexity
+        return 5  # High complexity
     elif complexity_score > 0:
         return 5   # Moderate complexity
     else:
-        return 2   # Low complexity
+        return 1   # Low complexity
 
     
 def init_data_analysis():
@@ -104,18 +174,10 @@ def run_research_assistant_chatbot():
     st.title("Research Xpert 📄")
     st.caption('Ask questions about REAL scientific articles')
     st.markdown('Enjoy fully cited responses, Harvard style.')
-    st.divider()
+    # st.divider()
 
     
-    PROMPT_TEMPLATE = """
-    Answer the question based only on the following context:
 
-    {context}
-
-    ---
-
-    Answer the question based on the above context: {question}
-    """
 
     if "openai_model" not in st.session_state:
         st.session_state["openai_model"] = "gpt-3.5-turbo"
@@ -155,7 +217,7 @@ def run_research_assistant_chatbot():
 
     
     pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])
-    # Now do stuff
+
     if 'pinecone' not in pc.list_indexes().names():
         pc.create_index(
             name='pinecone', 
@@ -166,134 +228,56 @@ def run_research_assistant_chatbot():
                 region='us-west-1'
             )
         )
-        
-    options = [
-    "Design me an experiment on this",
-    "What is an outstanding area of research on this topic?",
-    "Explain a previous experiment that has been done on this",
-    "Explain this concept as you would to a kid",
-    "Turn this into a scientific report"
-    ]
 
-
-    
     def formulate_response(prompt):
-        
-
-        citations = ""
         openai_api_key = os.environ["OPENAI_API_KEY"]
-        embedding_function = CustomOpenAIEmbeddings(openai_api_key=openai_api_key)
-        # db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embedding_function)
         db = pc.Index("pinecone")
         chat_history = "\n".join([msg["content"] for msg in st.session_state.messages if msg["role"] == "user"])
         prompt_with_history = f"Previous conversation:\n{chat_history}\n\nYour question: {prompt} Answer the question directly."
-        k = estimate_complexity(prompt)
-        # results = db.similarity_search_with_relevance_scores(prompt_with_history, k=k)
-        
-        client = OpenAI(
-            api_key=st.secrets["OPENAI_API_KEY"]
-        ) 
-        xq = client.embeddings.create(input=prompt_with_history, model="text-embedding-3-small").data[0].embedding
+        k = estimate_complexity(prompt)     
+        client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+        xq = client.embeddings.create(input=prompt, model="text-embedding-3-small").data[0].embedding
         results = db.query(vector=[xq], top_k=k, include_metadata=True)
-        print(results)
-        
-        
-        # results = db.query(vector=vector[0] * 1536, top_k=k)
+        citations = ""
         with st.spinner("Thinking..."):
-            # if len(results) == 0 or results[0][1] < 0.85:
-            if results.matches:
+            print(results.matches[0].score)
+            if results.matches and results.matches[0].score > 0.01:
                 model = ChatOpenAI(openai_api_key=openai_api_key, model_name="gpt-3.5-turbo-0125")
-                # query the assistant here instead
-                response_text = model.predict(prompt_with_history)      
-                response = f" {response_text}"
-                a = estimate_complexity(prompt)
-                # follow_up_results = db.similarity_search_with_relevance_scores(response_text, k=a)
-                # follow_up_results = db.query(vector=response_vector[0] * 1536, top_k=a)
-
-                client = OpenAI(
-                    api_key=st.secrets["OPENAI_API_KEY"]
-                ) 
-                xq = client.embeddings.create(input=response_text, model="text-embedding-3-small").data[0].embedding
-                follow_up_results = db.query(vector=[xq], top_k=a, include_metadata=True)
-
-                very_strong_correlation_threshold = 0.75
-                high_scoring_results = [result for result in follow_up_results.matches if result.score >= very_strong_correlation_threshold]
-
-                if results.matches:
-                    sources = {} 
-                    combined_texts = []
-                    if results.matches:
-                        response_text = ""
-                        for match in results.matches:
-                            metadata = match.metadata
-                            authors = metadata.get('authors', 'Unknown')
-                            year = metadata.get('year', 'Unknown')
-                            citation_key = f"({authors.split(',')[0]} et al., {year})"
-                            
-                            # Prepare response text and record the source info
-                            response_text += f"Based on the findings in {citation_key}, [further text]...\n"
-                            sources[citation_key] = (
-                                f"\n🦠 {metadata.get('authors', 'Unknown')}\n"
-                                f"({metadata.get('year', 'Unknown')}),\n"
-                                f"\"{metadata['title']}\",\n"
-                                f"PMID: {metadata.get('pub_id', 'N/A')},\n"
-                                f"Available at: {metadata.get('url', 'N/A')},\n"
-                                f"Accessed on: {datetime.today().strftime('%Y-%m-%d')}\n"
-                            )
-
-                        # Format sources only cited in the response
-                        citations = "\n".join([sources[key] for key in sources if key in response_text])
-                        # sources.append(source_info)
-                    combined_input = " ".join(combined_texts)
-                    # query_for_llm = f"{combined_input} Answer the question with citation to the paragraphs. For every sentence you write, cite the book name and paragraph number as (author, year). At the end of your commentary, suggest a further question that can be answered by the paragraphs provided."
-                    query_for_llm = (
-                        f"Question: {prompt}\n\n"
-                        f"Please answer the question directly with a lot of extra technical detail, with pretty formatting and bold headings, citing relevant sentences with (author, year). The (author, year) should be a hyperlink to the {metadata.get('url', 'N/A')} pubmed url. citings: {sources[citation_key]}"
-                    )
-                    integrated_response = model.predict(query_for_llm)
-                    # sources_formatted = "\n".join(sources) 
-                    # citations = sources_formatted
-                    
-                    response = f"{integrated_response}\n"
-            else:
-                context_texts = []
-                sources = []
-                for match in results.matches:
-                    doc_id = match.id
+                db_response = db.query(vector=[xq], top_k=k, include_metadata=True)
+                sources = {}
+                for match in db_response.matches:
                     metadata = match.metadata
                     authors = metadata.get('authors', 'Unknown')
                     year = metadata.get('year', 'Unknown')
-                    title = metadata.get('title', 'Unknown')
-                    pub_id = metadata.get('pub_id', 'N/A')
-                    url = metadata.get('url', 'N/A')
-
                     citation_key = f"({authors.split(',')[0]} et al., {year})"
-                    source_info = (
-                        f"\n🦠 {authors}\n"
-                        f"({year}),\n"
-                        f"\"{title}\",\n"
-                        f"PMID: {pub_id},\n"
-                        f"Available at: {url},\n"
-                        f"Accessed on: {datetime.today().strftime('%Y-%m-%d')}\n"
-                    )
-                    sources.append(source_info)
-                context_text = "\n\n---\n\n".join(context_texts)
-                prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
-                formatted_prompt = prompt_template.format(context=context_text, question=prompt_with_history)
+                    if citation_key not in sources:
+                        sources[citation_key] = (
+                            f"\n🦠 {metadata.get('authors', 'Unknown')}\n"
+                            f"({metadata.get('year', 'Unknown')}),\n"
+                            f"\"{metadata['title']}\",\n"
+                            f"PMID: {metadata.get('pub_id', 'N/A')},\n"
+                            f"Available at: {metadata.get('url', 'N/A')},\n"
+                            f"Accessed on: {datetime.today().strftime('%Y-%m-%d')}\n"
+                        )
+                citations = "\n".join(sources.values())
+                query_for_llm = (
+                    f"Answer directly with detail: Question: {prompt_with_history}\n\n"
+                    f"Cite each sentence as (author, year) {citations} \n"
+                    "Do NOT list references."
+                )
+                integrated_response = model.predict(query_for_llm)
+                response = f"{integrated_response}\n"
+            else:
                 model = ChatOpenAI(openai_api_key=openai_api_key, model_name="gpt-3.5-turbo-0125")
-                response_text = model.predict(formatted_prompt)
-                sources_formatted = "\n\n".join(sources)
-                citations = sources_formatted    
-                response = f" {response_text}\n"
-                
-        if citations:
-            st.session_state.messages.append({"role": "assistant", "content": response, "citations": citations})
-        else:
-            st.session_state.messages.append({"role": "assistant", "content": response})
-        
+                response = model.predict(prompt_with_history)
+
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": response,
+            "citations": citations
+        })
+
         display_messages()
-
-
 
     def typewriter(container, text: str, speed: int):
         """Display text with a typewriter effect, preserving newline characters."""
@@ -308,6 +292,63 @@ def run_research_assistant_chatbot():
                 container.markdown(curr_full_text_with_line, unsafe_allow_html=True)
                 time.sleep(1 / speed)
             curr_full_text += f"{line}\n"
+            
+    import openai
+
+    def generate_prompts_experiment(base_prompt):
+
+        openai_api_key = st.secrets["OPENAI_API_KEY"]
+
+        prompt_variations = (
+            "Only return the prompt"
+            f"Come up a concise prompt based on the question about designing an experiment: {base_prompt}"
+
+        )
+        model = ChatOpenAI(openai_api_key=openai_api_key, model_name="gpt-3.5-turbo-0125")
+        integrated_response = model.predict(prompt_variations)
+        return integrated_response
+    def generate_prompts_explain(base_prompt):
+
+        openai_api_key = st.secrets["OPENAI_API_KEY"]
+
+        prompt_variations = (
+            "Only return the prompt"
+            f"Come up a concise prompt based on the question about making the concept easier to understand: {base_prompt}"
+
+        )
+        model = ChatOpenAI(openai_api_key=openai_api_key, model_name="gpt-3.5-turbo-0125")
+        integrated_response = model.predict(prompt_variations)
+        return integrated_response
+
+    def generate_prompts_previous(base_prompt):
+
+        openai_api_key = st.secrets["OPENAI_API_KEY"]
+
+        prompt_variations = (
+            "Only return the prompt"
+            f"Come up a concise prompt based on the question about an experiment done in the past about it: {base_prompt}"
+
+        )
+        model = ChatOpenAI(openai_api_key=openai_api_key, model_name="gpt-3.5-turbo-0125")
+        integrated_response = model.predict(prompt_variations)
+        return integrated_response
+
+    def generate_prompts_outstanding(base_prompt):
+
+        openai_api_key = st.secrets["OPENAI_API_KEY"]
+
+        prompt_variations = (
+            "Only return the prompt"
+            f"Come up a concise prompt based on the question about outstanding areas of research on that topic: {base_prompt}"
+
+        )
+        model = ChatOpenAI(openai_api_key=openai_api_key, model_name="gpt-3.5-turbo-0125")
+        integrated_response = model.predict(prompt_variations)
+        return integrated_response
+
+
+
+
 
     def display_messages():
         """Function to display all messages in the chat history and show citations for the last response."""
@@ -328,14 +369,42 @@ def run_research_assistant_chatbot():
                 citations_button_label = "Show Citations"
                 with st.expander(citations_button_label):
                     st.markdown(message["citations"], unsafe_allow_html=True)
+                base_prompt = "Describe the process of photosynthesis"
+                # result = generate_prompts(base_prompt)
+                # print(result)
+
+                
+                with st.container():
+                    with st.spinner("Thinking..."):
+                        label = generate_prompts_experiment(st.session_state.messages)
+                        label2 = generate_prompts_explain(st.session_state.messages)
+                        label3 = generate_prompts_previous(st.session_state.messages)
+                        label4 = generate_prompts_outstanding(st.session_state.messages)
+                        print(label)
+                        selected_prompt = None
+
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button(label=label, key = f"{label3}1"):
+                                selected_prompt = label
+                        with col2:
+                            if st.button(label=label2, key = f"{label3}2"):
+                                selected_prompt = label2
+
+                        col3, col4 = st.columns(2)
+                        with col3:
+                            if st.button(label=label3, key = f"{label3}3"):
+                                selected_prompt = label3
+                        with col4:
+                            if st.button(label=label4, key = f"{label3}4"):
+                                selected_prompt = label4
+                    if selected_prompt is not None:
+                        st.session_state.messages.append({"role": "user", "content": selected_prompt})
+                        formulate_response(selected_prompt)
 
 
-    selected_prompt = pills("Prompts", options)
-    if selected_prompt:
-        st.session_state.messages.append({"role": "user", "content": selected_prompt})
-        formulate_response(selected_prompt)
 
-
+            
     user_prompt = st.chat_input("How can I help?")
 
         
@@ -591,7 +660,7 @@ def run_data_analysis_chatbot():
     def main():
         st.caption('Upload your data file/s and I can produce graphs from your experiment')
         st.markdown('Your data analysis Xpert!')
-        st.divider()
+        # st.divider()
         api_key = set_apikey()
         if api_key:
             client = OpenAI(api_key=api_key)
@@ -614,19 +683,41 @@ def run_data_analysis_chatbot():
         print(st.session_state.file_ids)
 
 def main():
-    st.sidebar.title("LabXpert ")
-    # st.sidebar.image("pic.png")
-    st.sidebar.caption("Copyright © 2024 LabXpert, Inc. All rights reserved.")
+    # st.sidebar.image("pic.png"
     st.sidebar.divider()
     # Set 'Research Xpert 🔬' as the default selected option
-    chatbot_mode = st.sidebar.radio("Select an AI Xpert", ('Research Xpert ', 'Data Xpert '), index=0)
-    if chatbot_mode == 'Research Xpert ':
+    # tab1, tab2 = st.sidebar.tabs(["Research Xpert", "Data Xpert"])
+
+    # with tab1:
+    #     init_research_assistant()
+    #     run_research_assistant_chatbot()
+
+    # with tab2:
+    #     init_data_analysis()
+    #     run_data_analysis_chatbot()
+    
+    from streamlit_pills import pills
+
+    selected = pills("Choose which Lab Xpert you would like to chat with:", ["Research Xpert", "Data Xpert"], ["📄", "📊"])
+    st.divider()
+    if selected == 'Research Xpert':
         init_research_assistant()
         run_research_assistant_chatbot()
-    elif chatbot_mode == 'Data Xpert ':
+    elif selected == 'Data Xpert':
         init_data_analysis()
         run_data_analysis_chatbot()
+        
+        
+    
+    # chatbot_mode = st.sidebar.radio("Select an AI Xpert", ('Research Xpert ', 'Data Xpert '), index=0)
+    # if chatbot_mode == 'Research Xpert ':
+    #     init_research_assistant()
+    #     run_research_assistant_chatbot()
+    # elif chatbot_mode == 'Data Xpert ':
+    #     init_data_analysis()
+    #     run_data_analysis_chatbot()
+        
+    
 
 if __name__ == '__main__':
     main()
-
